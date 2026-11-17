@@ -39,8 +39,16 @@ const TP_NUM = 1015n;
 const SL_NUM = 993n;
 /** Longest a position is held, in bars, before it is sold. */
 const MAX_HOLD_BARS = 1440;
-/** Slippage cap per order, in bps (1% past the latest close). */
-const MAX_SLIPPAGE_BPS = 100;
+/** Slippage cap on BUY orders, in bps (1% past the latest close): a buy that
+ * would fill more than this above the dip close is rejected, so the bot never
+ * chases a dip that already reverted violently. */
+const MAX_SLIPPAGE_BPS_BUY = 100;
+/** Slippage cap on SELL orders, in bps (5% past the latest close): exits (take
+ * profit / stop loss / max hold) must execute even in a fast market — a sell
+ * rejected for slippage leaves the position exposed while the market keeps
+ * moving, so the exit cap is wide. The fill price is the next open either
+ * way; the cap only decides accept/reject. */
+const MAX_SLIPPAGE_BPS_SELL = 500;
 
 const closes: number[] = [];
 let sumFast = 0;
@@ -74,13 +82,13 @@ await runBars({
     if (held !== undefined) {
       const value = state.value(SYMBOL, held.qty);
       if (value * 1000n >= held.cost * TP_NUM) {
-        return [{ side: 'sell', symbol: SYMBOL, qty: held.qty, max_slippage_bps: MAX_SLIPPAGE_BPS } satisfies SellInput];
+        return [{ side: 'sell', symbol: SYMBOL, qty: held.qty, max_slippage_bps: MAX_SLIPPAGE_BPS_SELL } satisfies SellInput];
       }
       if (value * 1000n <= held.cost * SL_NUM) {
-        return [{ side: 'sell', symbol: SYMBOL, qty: held.qty, max_slippage_bps: MAX_SLIPPAGE_BPS } satisfies SellInput];
+        return [{ side: 'sell', symbol: SYMBOL, qty: held.qty, max_slippage_bps: MAX_SLIPPAGE_BPS_SELL } satisfies SellInput];
       }
       if (entryBar >= 0 && state.seq - entryBar >= MAX_HOLD_BARS) {
-        return [{ side: 'sell', symbol: SYMBOL, qty: held.qty, max_slippage_bps: MAX_SLIPPAGE_BPS } satisfies SellInput];
+        return [{ side: 'sell', symbol: SYMBOL, qty: held.qty, max_slippage_bps: MAX_SLIPPAGE_BPS_SELL } satisfies SellInput];
       }
       return [];
     }
@@ -90,6 +98,6 @@ await runBars({
     if (!dipped) return [];
     if (state.cash < BigInt(state.hello.fees.min_notional_quote_units)) return [];
     entryBar = state.seq;
-    return [{ side: 'buy', symbol: SYMBOL, notional_quote_units: state.cash, max_slippage_bps: MAX_SLIPPAGE_BPS } satisfies BuyInput];
+    return [{ side: 'buy', symbol: SYMBOL, notional_quote_units: state.cash, max_slippage_bps: MAX_SLIPPAGE_BPS_BUY } satisfies BuyInput];
   },
 });
